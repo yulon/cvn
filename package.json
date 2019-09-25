@@ -1,0 +1,22 @@
+{
+  "name": "cvn",
+  "version": "0.1.0",
+  "description": "Building C/C++ project with CMake + Vcpkg + Ninja.",
+  "bin": {
+    "cvn": "cvn.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yulon/cvn.git"
+  },
+  "keywords": [
+    "CMake",
+    "Vcpkg",
+    "Ninja"
+  ],
+  "author": "Yulon",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^3.0.1"
+  }
+}
