@@ -52,9 +52,7 @@ function rm(path) {
 
 async function exec(cmd, args) {
 	return await new Promise((resolve) => {
-		var child = cp.spawn(cmd, args);
-		child.stdout.pipe(process.stdout);
-		child.stderr.pipe(process.stderr);
+		var child = cp.spawn(cmd, args, { stdio: 'inherit' });
 		child.on('exit', function (code) {
 			resolve(code)
 		});
