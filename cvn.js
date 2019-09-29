@@ -34,20 +34,30 @@ function mkdir(dir) {
 	return true
 }
 
-function rm(path) {
-	var files = []
-	if (fs.existsSync(path)) {
-		files = fs.readdirSync(path)
-		files.forEach(function (file, index) {
-			var curPath = path + "/" + file
-			if (fs.lstatSync(curPath).isDirectory()) { // recurse
-				rm(curPath)
-			} else { // delete file
-				fs.unlinkSync(curPath);
-			}
-		})
-		fs.rmdirSync(path)
+function rm(p) {
+	if (!fs.existsSync(p)) {
+		return
 	}
+	if (!fs.lstatSync(p).isDirectory()) {
+		fs.unlinkSync(p)
+		return
+	}
+	fs.readdirSync(p).forEach(function (n) {
+		rm(path.join(p, n))
+	})
+	fs.rmdirSync(p)
+}
+
+function clean(p) {
+	if (!fs.existsSync(p)) {
+		return
+	}
+	if (!fs.lstatSync(p).isDirectory()) {
+		return
+	}
+	fs.readdirSync(p).forEach(function (n) {
+		rm(path.join(p, n))
+	})
 }
 
 async function exec(cmd, args) {
@@ -91,7 +101,7 @@ async function cmake(srcDir, outDir, args) {
 	}
 
 	if (flags.clean) {
-		rm(flags.output)
+		clean(outDir)
 	}
 
 	if (flags.gen || flags.build) {
@@ -118,13 +128,15 @@ async function cmake(srcDir, outDir, args) {
 				return
 			}
 		} else {
-			console.log('Already exists.')
-			console.log('If you want to regenerate, use "-c" or "--clean" option.')
+			console.log('Already exists. (use "-c" or "--clean" to regenerate)')
 			console.log('')
 		}
 
 		if (flags.gen && process.platform === 'win32') {
 			var outDir = outDirBase + '-vs'
+			if (flags.clean) {
+				clean(outDir)
+			}
 			console.log('=> Generating Visual Studio files')
 			if (!fs.existsSync(outDir)) {
 				if (!await cmake(
@@ -135,8 +147,7 @@ async function cmake(srcDir, outDir, args) {
 					return
 				}
 			} else {
-				console.log('Already exists.')
-				console.log('If you want to regenerate, use "-c" or "--clean" option.')
+				console.log('Already exists. (use "-c" or "--clean" to regenerate)')
 				console.log('')
 			}
 		}
@@ -149,7 +160,7 @@ async function cmake(srcDir, outDir, args) {
 			args.concat(['-j', flags.jobs])
 		}
 		if (await exec('ninja', args) !== 0) {
-			return false
+			return
 		}
 		console.log('')
 		console.log('=> Output: ' + outDir)
