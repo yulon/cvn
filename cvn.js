@@ -138,10 +138,18 @@ async function cmake(srcDir, outDir, args) {
 			}
 			console.log('=> Generating Visual Studio files')
 			if (!fs.existsSync(path.join(outDir, 'CMakeCache.txt'))) {
+				var vsArch
+				switch (vcpkgDefaultTriplet.substr(0, 3)) {
+					case 'x86':
+						vsArch = 'Win32'
+						break
+					case 'x64':
+						vsArch = 'Win64'
+				}
 				if (!await cmake(
 					flags.src,
 					outDir,
-					args
+					vsArch ? ['-A', vsArch].concat(args) : args
 				)) {
 					return
 				}
