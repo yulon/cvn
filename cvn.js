@@ -86,8 +86,6 @@ async function cmake(srcDir, outDir, args) {
 		return
 	}
 
-	const cmakeToolchainFile = '-DCMAKE_TOOLCHAIN_FILE=' + path.join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake')
-
 	const vcpkgDefaultTriplet = process.env['VCPKG_DEFAULT_TRIPLET']
 	if (!vcpkgDefaultTriplet) {
 		console.error('Undefined VCPKG_DEFAULT_TRIPLET!')
@@ -106,7 +104,8 @@ async function cmake(srcDir, outDir, args) {
 
 	if (flags.gen || flags.build) {
 		var args = [
-			cmakeToolchainFile
+			'-DCMAKE_TOOLCHAIN_FILE=' + path.join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake'),
+			'-DVCPKG_TARGET_TRIPLET=' + vcpkgDefaultTriplet
 		]
 		if (flags.cmakeDefine && flags.cmakeDefine.length > 0) {
 			args = args.concat(flags.cmakeDefine)
@@ -116,7 +115,7 @@ async function cmake(srcDir, outDir, args) {
 		}
 
 		console.log('=> Generating build files')
-		if (!fs.existsSync(outDir)) {
+		if (!fs.existsSync(path.join(outDir, 'build.ninja'))) {
 			if (!await cmake(
 				flags.src,
 				outDir,
@@ -138,7 +137,7 @@ async function cmake(srcDir, outDir, args) {
 				clean(outDir)
 			}
 			console.log('=> Generating Visual Studio files')
-			if (!fs.existsSync(outDir)) {
+			if (!fs.existsSync(path.join(outDir, 'CMakeCache.txt'))) {
 				if (!await cmake(
 					flags.src,
 					outDir,
