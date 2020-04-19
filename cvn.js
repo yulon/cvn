@@ -78,21 +78,29 @@ async function cmake(srcDir, outDir, args) {
 	return false
 }
 
+function getArch(target) {
+	const pos = target.indexOf('-')
+	if (pos >= 0) {
+		return target.substring(0, pos).toLowerCase()
+	}
+	return target.toLowerCase()
+}
+
 ;
 (async () => {
-	const vcpkgRoot = process.env['VCPKG_ROOT']
-	if (!vcpkgRoot) {
-		console.error('Undefined VCPKG_ROOT!')
-		return
+	var target, vcpkgRoot
+
+	target = process.env['MINGW_CHOST']
+	if (!target) {
+		vcpkgRoot = process.env['VCPKG_ROOT']
+		if (vcpkgRoot) {
+			target = process.env['VCPKG_DEFAULT_TRIPLET']
+		} else {
+			target = 'native'
+		}
 	}
 
-	const vcpkgDefaultTriplet = process.env['VCPKG_DEFAULT_TRIPLET']
-	if (!vcpkgDefaultTriplet) {
-		console.error('Undefined VCPKG_DEFAULT_TRIPLET!')
-		return
-	}
-
-	const outDirBase = path.join(flags.output, vcpkgDefaultTriplet)
+	const outDirBase = path.join(flags.output, target)
 	var outDir = outDirBase
 	if (!flags.release) {
 		outDir += '-d'
@@ -103,10 +111,10 @@ async function cmake(srcDir, outDir, args) {
 	}
 
 	if (flags.gen || flags.build) {
-		var args = [
+		var args = vcpkgRoot ? [
 			'-DCMAKE_TOOLCHAIN_FILE=' + path.join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake'),
-			'-DVCPKG_TARGET_TRIPLET=' + vcpkgDefaultTriplet
-		]
+			'-DVCPKG_TARGET_TRIPLET=' + target
+		] : []
 		if (flags.cmakeDefine && flags.cmakeDefine.length > 0) {
 			args = args.concat(flags.cmakeDefine)
 			for (let i = args.length - flags.cmakeDefine.length; i < args.length; i++) {
@@ -139,12 +147,18 @@ async function cmake(srcDir, outDir, args) {
 			console.log('=> Generating Visual Studio files')
 			if (!fs.existsSync(path.join(outDir, 'CMakeCache.txt'))) {
 				var vsArch
-				switch (vcpkgDefaultTriplet.substr(0, 3)) {
-					case 'x86':
-						vsArch = 'Win32'
-						break
-					case 'x64':
-						vsArch = 'Win64'
+				if (target !== 'native') {
+					switch (getArch(target)) {
+						case 'amd64':
+						case 'x86_64':
+						case 'x64':
+							vsArch = 'x64'
+							break
+						case 'i386':
+						case 'i686':
+						case 'x86':
+							vsArch = 'Win32'
+					}
 				}
 				if (!await cmake(
 					flags.src,
