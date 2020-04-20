@@ -140,26 +140,32 @@ function getArch(target) {
 		}
 
 		if (flags.gen && process.platform === 'win32') {
-			var outDir = outDirBase + '-vs'
+			var vsArch
+			if (target !== 'native') {
+				switch (getArch(target)) {
+					case 'amd64':
+					case 'x86_64':
+					case 'x64':
+						vsArch = 'x64'
+						break
+					case 'i386':
+					case 'i686':
+					case 'x86':
+						vsArch = 'Win32'
+				}
+			}
+			var vsTarget
+			if (vsArch) {
+				vsTarget = vsArch + '-windows-vs'
+			} else {
+				vsTarget = 'native-windows-vs'
+			}
+			const outDir = path.join(flags.output, vsTarget)
 			if (flags.clean) {
 				clean(outDir)
 			}
 			console.log('=> Generating Visual Studio files')
 			if (!fs.existsSync(path.join(outDir, 'CMakeCache.txt'))) {
-				var vsArch
-				if (target !== 'native') {
-					switch (getArch(target)) {
-						case 'amd64':
-						case 'x86_64':
-						case 'x64':
-							vsArch = 'x64'
-							break
-						case 'i386':
-						case 'i686':
-						case 'x86':
-							vsArch = 'Win32'
-					}
-				}
 				if (!await cmake(
 					flags.src,
 					outDir,
