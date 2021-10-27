@@ -4,26 +4,29 @@ const process = require('process')
 const fs = require('fs')
 const cp = require('child_process')
 const path = require('path')
-const flags = require('commander');
+const { program } = require('commander');
 
-function collect(value, previous) {
-	if (!previous) {
-		return [value]
-	}
-	return previous.concat([value]);
-}
+var buildTarget
 
-flags
-	.version('0.1.0')
+program
+	.version('0.4.0')
 	.option('-g, --gen', 'Generate build files.')
 	.option('-b, --build', 'Build binary.')
 	.option('-r, --release', 'Set release mode.')
+	.option('-i, --ide', 'Generate IDE files.')
+	.option('-x, --winxp', 'Use Windows XP compatible toolset.')
 	.option('-j, --jobs <N>', '')
 	.option('-c, --clean', '')
-	.option('-d, --cmake-define <var>', 'Create or update a cmake cache entry.', collect)
+	.option('-d, --cmake-define <defines...>', 'Create or update a cmake cache entry.')
 	.option('-s, --src <path-to-source>', 'Explicitly specify a source directory.', '.')
 	.option('-o, --output <path-to-output>', 'Explicitly specify a output directory.', 'out.cvn')
+	.argument('[target]', 'Build target name.')
+	.action((target) => {
+		buildTarget = target
+	})
 	.parse(process.argv)
+
+const flags = program.opts()
 
 function mkdir(dir) {
 	if (fs.existsSync(dir)) {
@@ -69,7 +72,7 @@ async function exec(cmd, args) {
 	})
 }
 
-async function cmake(srcDir, outDir, args) {
+async function cmakeConfigure(srcDir, outDir, args) {
 	mkdir(outDir)
 	if (await exec('cmake', ['-S', srcDir, '-B', outDir].concat(args)) === 0) {
 		console.log('')
@@ -78,71 +81,58 @@ async function cmake(srcDir, outDir, args) {
 	return false
 }
 
-function getArch(target) {
-	const pos = target.indexOf('-')
-	if (pos >= 0) {
-		return target.substring(0, pos).toLowerCase()
+async function cmakeBuild(outDir, args) {
+	if (await exec('cmake', ['--build', outDir].concat(args)) === 0) {
+		return true
 	}
-	return target.toLowerCase()
+	return false
+}
+
+function getArch(plat) {
+	const pos = plat.indexOf('-')
+	if (pos >= 0) {
+		return plat.substring(0, pos).toLowerCase()
+	}
+	return plat.toLowerCase()
 }
 
 ;
 (async () => {
-	var target, vcpkgRoot
+	var plat, vcpkgRoot
 
-	target = process.env['MINGW_CHOST']
-	if (!target) {
+	plat = process.env['MINGW_CHOST']
+	if (!plat) {
 		vcpkgRoot = process.env['VCPKG_ROOT']
 		if (vcpkgRoot) {
-			target = process.env['VCPKG_DEFAULT_TRIPLET']
+			plat = process.env['VCPKG_DEFAULT_TRIPLET']
 		} else {
-			target = 'native'
+			plat = 'native'
 		}
 	}
 
-	const outDirBase = path.join(flags.output, target)
+	const outDirBase = path.join(flags.output, plat)
 	var outDir = outDirBase
 	if (!flags.release) {
 		outDir += '-d'
 	}
 
-	if (flags.clean) {
-		clean(outDir)
-	}
-
 	if (flags.gen || flags.build) {
 		var args = vcpkgRoot ? [
 			'-DCMAKE_TOOLCHAIN_FILE=' + path.join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake'),
-			'-DVCPKG_TARGET_TRIPLET=' + target
+			'-DVCPKG_TARGET_TRIPLET=' + plat
 		] : []
 		if (flags.cmakeDefine && flags.cmakeDefine.length > 0) {
-			args = args.concat(flags.cmakeDefine)
+			args.push(...flags.cmakeDefine)
 			for (let i = args.length - flags.cmakeDefine.length; i < args.length; i++) {
 				args[i] = '-D' + args[i]
 			}
 		}
+		if (flags.ide && process.platform === 'win32') {
+			console.log('=> Generating Visual Studio files')
 
-		console.log('=> Generating build files')
-		if (!fs.existsSync(path.join(outDir, 'build.ninja'))) {
-			if (!await cmake(
-				flags.src,
-				outDir,
-				[
-					'-G', 'Ninja',
-					'-DCMAKE_BUILD_TYPE=' + (flags.release ? 'Release' : 'Debug')
-				].concat(args)
-			)) {
-				return
-			}
-		} else {
-			console.log('Already exists. (use "-c" or "--clean" to regenerate)')
-			console.log('')
-		}
-
-		if (flags.gen && process.platform === 'win32') {
-			var vsArch
-			if (target !== 'native') {
-				switch (getArch(target)) {
+			var vsArch = 'native'
+			if (plat !== 'native') {
+				switch (getArch(plat)) {
 					case 'amd64':
 					case 'x86_64':
 					case 'x64':
@@ -160,17 +150,36 @@ function getArch(target) {
 			} else {
 				vsTarget = 'native-windows-vs'
 			}
-			const outDir = path.join(flags.output, vsTarget)
+			outDir = path.join(flags.output, vsTarget)
 			if (flags.clean) {
 				clean(outDir)
 			}
-			console.log('=> Generating Visual Studio files')
 			if (!fs.existsSync(path.join(outDir, 'CMakeCache.txt'))) {
-				if (!await cmake(
-					flags.src,
-					outDir,
-					vsArch ? ['-A', vsArch].concat(args) : args
-				)) {
+				if (vsArch !== 'native') {
+					args = ['-A', vsArch].concat(args)
+				}
+				if (flags.winxp) {
+					args = ['-T', 'v141_xp'].concat(args)
+				}
+				if (!await cmakeConfigure(flags.src, outDir, args)) {
+					return
+				}
+			} else {
+				console.log('Already exists. (use "-c" or "--clean" to regenerate)')
+				console.log('')
+			}
+		} else {
+			console.log('=> Generating build files')
+
+			if (flags.clean) {
+				clean(outDir)
+			}
+			args = [
+				'-G', 'Ninja',
+				'-DCMAKE_BUILD_TYPE=' + (flags.release ? 'Release' : 'Debug')
+			].concat(args)
+			if (!fs.existsSync(path.join(outDir, 'build.ninja'))) {
+				if (!await cmakeConfigure(flags.src, outDir, args)) {
 					return
 				}
 			} else {
@@ -182,15 +191,17 @@ function getArch(target) {
 
 	if (flags.build) {
 		console.log('=> Building')
-		var args = ['-C', outDir]
+
+		var args = []
+		if (flags.ide) {
+			args.push(...['--config', (flags.release ? 'Release' : 'Debug')])
+		}
 		if (flags.jobs) {
-			args.concat(['-j', flags.jobs])
+			args.push(...['-j', flags.jobs])
 		}
-		if (await exec('ninja', args) !== 0) {
-			return
+		if (buildTarget) {
+			args.push(...['--target', buildTarget])
 		}
-		console.log('')
-		console.log('=> Output: ' + outDir)
-		console.log('')
+		await cmakeBuild(outDir, args)
 	}
 })()
